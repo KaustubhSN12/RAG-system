@@ -1,0 +1,17 @@
+# Embedding model (runs locally, free, no API key needed)
+sentence-transformers==3.0.1
+
+# Vector similarity search
+faiss-cpu==1.8.0
+
+# Keyword search (BM25) - part of the hybrid retrieval upgrade
+rank-bm25==0.2.2
+
+# Numerical operations
+numpy==1.26.4
+
+# Free-tier LLM for the generation step
+google-genai==1.2.0
+
+# Loads GEMINI_API_KEY from a .env file
+python-dotenv==1.0.1
