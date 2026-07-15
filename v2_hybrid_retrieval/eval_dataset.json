@@ -1,0 +1,62 @@
+[
+  {
+    "question": "Which planet is closest to the Sun?",
+    "expected_chunk_ids": [0],
+    "note": "Mercury"
+  },
+  {
+    "question": "Why is Venus hotter than Mercury even though it's farther from the Sun?",
+    "expected_chunk_ids": [1],
+    "note": "Venus greenhouse effect"
+  },
+  {
+    "question": "What percentage of Earth's surface is covered by water?",
+    "expected_chunk_ids": [2],
+    "note": "Earth"
+  },
+  {
+    "question": "What is the largest volcano in the solar system and which planet is it on?",
+    "expected_chunk_ids": [3],
+    "note": "Mars / Olympus Mons"
+  },
+  {
+    "question": "What is the Great Red Spot?",
+    "expected_chunk_ids": [4],
+    "note": "Jupiter"
+  },
+  {
+    "question": "What are Saturn's rings mostly made of?",
+    "expected_chunk_ids": [5],
+    "note": "Saturn"
+  },
+  {
+    "question": "Why does Uranus have such unusual seasons?",
+    "expected_chunk_ids": [6],
+    "note": "Uranus axial tilt"
+  },
+  {
+    "question": "Which planet has the strongest winds in the solar system?",
+    "expected_chunk_ids": [7],
+    "note": "Neptune"
+  },
+  {
+    "question": "Where is the asteroid belt located?",
+    "expected_chunk_ids": [8],
+    "note": "Asteroid belt"
+  },
+  {
+    "question": "How does the Sun generate its energy?",
+    "expected_chunk_ids": [9],
+    "note": "Sun / nuclear fusion"
+  },
+  {
+    "question": "Which planet spins in the opposite direction to most others, so the sun rises in the west?",
+    "expected_chunk_ids": [],
+    "note": "NOT in knowledge base (Venus retrograde rotation) - system should refuse, not guess"
+  },
+  {
+    "question": "What is Pluto's atmosphere made of?",
+    "expected_chunk_ids": [],
+    "note": "NOT in knowledge base (Pluto isn't covered at all) - system should refuse"
+  }
+]

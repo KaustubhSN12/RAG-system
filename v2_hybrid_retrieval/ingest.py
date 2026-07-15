@@ -62,7 +62,7 @@ def main():
         json.dump(chunks, f, indent=2)
 
     print(f"\nDone. Saved index to '{INDEX_FILE}' and chunks to '{CHUNKS_FILE}'.")
-    print("Now run: python query.py")
+    print("Now run: python rag_query.py")
 
 
 if __name__ == "__main__":
