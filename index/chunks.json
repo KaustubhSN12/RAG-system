@@ -1,5 +1,4 @@
 [
-<<<<<<< HEAD
   {
     "id": 0,
     "text": "Mercury is the smallest planet in the solar system and the closest to the Sun. It has no atmosphere to retain heat, so temperatures swing from extremely hot in the day to extremely cold at night. A year on Mercury lasts only 88 Earth days."
@@ -44,16 +43,4 @@
     "id": 10,
     "text": "Venus rotates in the opposite direction to most planets, a retrograde rotation that means the Sun appears to rise in the west and set in the east."
   }
-=======
-  "Mercury is the smallest planet in the solar system and the closest to the Sun. It has no atmosphere to retain heat, so temperatures swing from extremely hot in the day to extremely cold at night. A year on Mercury lasts only 88 Earth days.",
-  "Venus is the second planet from the Sun and is often called Earth's twin because of its similar size. However, Venus has a thick toxic atmosphere made mostly of carbon dioxide, causing a runaway greenhouse effect that makes it the hottest planet in the solar system, even hotter than Mercury.",
-  "Earth is the third planet from the Sun and the only known planet to support life. About 71 percent of its surface is covered by water. Earth has one natural satellite, the Moon, which stabilizes its rotation and causes tides.",
-  "Mars is the fourth planet from the Sun and is known as the Red Planet because of iron oxide, or rust, on its surface. Mars has the largest volcano in the solar system, Olympus Mons, and evidence suggests it once had liquid water on its surface.",
-  "Jupiter is the largest planet in the solar system, a gas giant so massive that all other planets could fit inside it. Jupiter has a famous storm called the Great Red Spot, which is larger than Earth and has been raging for hundreds of years.",
-  "Saturn is the second largest planet and is best known for its spectacular ring system, made mostly of ice particles with some rocky debris and dust. Saturn is also a gas giant and has dozens of moons, including Titan, which has a thick atmosphere.",
-  "Uranus is an ice giant that rotates on its side, with an axial tilt of about 98 degrees. This unusual tilt means its poles get more direct sunlight than its equator during parts of its orbit. Uranus appears pale blue due to methane in its atmosphere.",
-  "Neptune is the farthest planet from the Sun and is also an ice giant. It has the strongest winds in the solar system, reaching speeds of over 2000 kilometers per hour. Neptune was the first planet located through mathematical prediction rather than direct observation.",
-  "The asteroid belt is a region between the orbits of Mars and Jupiter that contains millions of rocky objects called asteroids. It is thought to be leftover material from the early solar system that never formed into a planet due to Jupiter's gravitational influence.",
-  "The Sun is a star at the center of the solar system and contains about 99.8 percent of the system's total mass. It generates energy through nuclear fusion, converting hydrogen into helium in its core, and this energy powers almost all life on Earth."
->>>>>>> bc00538c1e0e04c4dba51b3381fdeb95f14223e0
 ]

@@ -1,0 +1,11 @@
+--
+##Terminal 1
+
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+Terminal 2
+- streamlit_app.py
+
+streamlit run ui/streamlit_app.py
+
+--
