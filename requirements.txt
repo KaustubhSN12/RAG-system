@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 fastapi
 uvicorn
 pydantic
@@ -9,3 +10,19 @@ python-dotenv
 openai
 requests
 pytest
+=======
+# Embedding model (runs locally, free, no API key needed)
+sentence-transformers==3.0.1
+
+# Vector similarity search library
+faiss-cpu==1.8.0
+
+# Numerical operations
+numpy==1.26.4
+
+# Used to call an LLM for the "generation" step (optional - see query.py)
+openai==1.35.10
+
+# Loads OPENAI_API_KEY from a .env file so you never paste secrets into code
+python-dotenv==1.0.1
+>>>>>>> bc00538c1e0e04c4dba51b3381fdeb95f14223e0
