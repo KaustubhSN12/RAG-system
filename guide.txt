@@ -1,4 +1,6 @@
 --
+venv\Scripts\activate
+
 ##Terminal 1
 
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
@@ -8,4 +10,18 @@ Terminal 2
 
 streamlit run ui/streamlit_app.py
 
+
+
+Terminal 3
+
+python 1_ingest.py
+
+
+
+
+
+
+
 --
+
+

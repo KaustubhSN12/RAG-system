@@ -34,11 +34,11 @@ load_dotenv()
 INDEX_DIR = "index"
 INDEX_FILE = os.path.join(
     INDEX_DIR,
-    "C:/Users/KAUSTUBH/Documents/MIni Projects/Rag System/RAG/index/faiss_index.bin",
+    "C:/Users/KAUSTUBH/Documents/MIni Projects/Rag System/RAG_V3/index/faiss_index.bin",
 )
 CHUNKS_FILE = os.path.join(
     INDEX_DIR,
-    "C:/Users/KAUSTUBH/Documents/MIni Projects/Rag System/RAG/index/chunks.json",
+    "C:/Users/KAUSTUBH/Documents/MIni Projects/Rag System/RAG_V3/index/chunks.json",
 )
 
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
