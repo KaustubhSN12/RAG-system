@@ -4,7 +4,7 @@ import tempfile
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
 
-from app.rag import rag, answer_question, extract_text_from_pdf
+from app.rag import rag, answer_question
 
 app = FastAPI(title="RAG Service")
 
@@ -47,10 +47,9 @@ async def ingest_pdf(file: UploadFile = File(...)):
         tmp.write(content)
 
     try:
-        text = extract_text_from_pdf(tmp_path)
-        if not text.strip():
-            raise HTTPException(status_code=400, detail="No extractable text found in PDF")
-        count = rag.ingest_text(text, source_name=file.filename)
+        count = rag.ingest_pdf(tmp_path)
+        if count == 0:
+            return IngestResponse(status="ok", indexed_chunks=0)
         return IngestResponse(status="ok", indexed_chunks=count)
     finally:
         if tmp_path.exists():

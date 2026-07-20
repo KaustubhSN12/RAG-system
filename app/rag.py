@@ -1,8 +1,9 @@
 import json
 import re
 import time
+import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Any
 
 from PyPDF2 import PdfReader
 
@@ -23,23 +24,16 @@ def rewrite_query(question: str) -> str:
     return question.strip()
 
 
-def extract_text_from_pdf(pdf_path: Path) -> str:
-    reader = PdfReader(str(pdf_path))
-    pages_text = []
-    for page in reader.pages:
-        text = page.extract_text() or ""
-        text = text.strip()
-        if text:
-            pages_text.append(text)
-    return "\n\n".join(pages_text)
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
 
-def chunk_text(text: str) -> List[str]:
-    parts = [p.strip() for p in text.split("\n\n") if p.strip()]
-    if parts:
-        return parts
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    return lines
+def file_hash_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def file_hash_path(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def load_chunks():
@@ -53,20 +47,85 @@ def save_chunks(chunks):
     CHUNKS_PATH.write_text(json.dumps(chunks, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def add_document_chunks(text: str, source_name: str = "uploaded_pdf") -> int:
+def chunk_text(text: str):
+    parts = [p.strip() for p in text.split("\n\n") if p.strip()]
+    if parts:
+        return parts
+    return [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+
+def extract_text_from_pdf(pdf_path: Path):
+    reader = PdfReader(str(pdf_path))
+    pages = []
+    for page_num, page in enumerate(reader.pages, start=1):
+        text = (page.extract_text() or "").strip()
+        if text:
+            pages.append({
+                "page_number": page_num,
+                "text": text,
+            })
+    return pages
+
+
+def ingest_plain_text(text: str, source_name: str = "uploaded_text", doc_id: str = None, doc_version: str = "v1"):
     existing = load_chunks()
-    start_id = max([c.get("id", -1) for c in existing], default=-1) + 1
-    new_parts = chunk_text(text)
+    existing_ids = [c.get("id", -1) for c in existing]
+    start_id = max(existing_ids, default=-1) + 1
+
     new_chunks = []
-    for i, part in enumerate(new_parts):
+    for idx, part in enumerate(chunk_text(text), start=1):
         new_chunks.append({
-            "id": start_id + i,
+            "id": start_id + idx - 1,
             "text": part,
-            "source": source_name
+            "source_name": source_name,
+            "page_number": None,
+            "chunk_index": idx,
+            "doc_id": doc_id or file_hash_bytes(text.encode("utf-8")),
+            "doc_version": doc_version,
+            "ingested_at": now_iso(),
         })
+
     all_chunks = existing + new_chunks
     save_chunks(all_chunks)
-    return len(new_chunks)
+    return new_chunks
+
+
+def ingest_pdf_file(pdf_path: Path):
+    pdf_bytes = pdf_path.read_bytes()
+    doc_id = file_hash_bytes(pdf_bytes)
+    doc_version = "v1"
+    source_name = pdf_path.name
+
+    existing = load_chunks()
+    existing_doc_ids = {c.get("doc_id") for c in existing if c.get("doc_id")}
+    if doc_id in existing_doc_ids:
+        return []
+
+    start_id = max([c.get("id", -1) for c in existing], default=-1) + 1
+    pages = extract_text_from_pdf(pdf_path)
+
+    new_chunks = []
+    next_id = start_id
+
+    for page in pages:
+        page_number = page["page_number"]
+        page_text = page["text"]
+        for chunk_index, part in enumerate(chunk_text(page_text), start=1):
+            new_chunks.append({
+                "id": next_id,
+                "text": part,
+                "source_name": source_name,
+                "page_number": page_number,
+                "chunk_index": chunk_index,
+                "doc_id": doc_id,
+                "doc_version": doc_version,
+                "ingested_at": now_iso(),
+            })
+            next_id += 1
+
+    all_chunks = existing + new_chunks
+    save_chunks(all_chunks)
+    return new_chunks
 
 
 def keyword_retrieve(chunks, query_tokens, top_k=8):
@@ -95,8 +154,7 @@ def keyword_retrieve(chunks, query_tokens, top_k=8):
         if "runaway greenhouse" in query_phrase and "runaway greenhouse" in text:
             boost += 4
 
-        score = overlap + boost
-        scored.append((score, ch))
+        scored.append((overlap + boost, ch))
 
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored[:top_k]
@@ -134,9 +192,8 @@ def merge_results(vector_hits, keyword_hits, top_k=8):
 
 
 def rerank(question: str, retrieved):
-    q = set(tokenize(question))
+    q_text = " ".join(tokenize(question))
     ranked = []
-    q_text = " ".join(q)
 
     for score, ch in retrieved:
         text = ch["text"].lower()
@@ -154,8 +211,6 @@ def rerank(question: str, retrieved):
             bonus += 5
         if "liquid water" in q_text and "liquid water" in text:
             bonus += 5
-        if "most confirmed moons" in q_text and "moon" in text:
-            bonus += 1
 
         ranked.append((score + bonus, ch))
 
@@ -166,7 +221,10 @@ def rerank(question: str, retrieved):
 def compress_context(retrieved):
     lines = []
     for score, ch in retrieved[:5]:
-        lines.append(f"[Chunk {ch['id']}] {ch['text']}")
+        lines.append(
+            f"[Chunk {ch['id']}] {ch['text']} "
+            f"(source={ch.get('source_name', 'unknown')}, page={ch.get('page_number')})"
+        )
     return "\n".join(lines)
 
 
@@ -188,29 +246,14 @@ class SimpleRAG:
     def __init__(self):
         self.chunks = load_chunks()
 
-    def ingest(self, source_path: str) -> int:
-        text = Path(source_path).read_text(encoding="utf-8")
-        raw_chunks = [c.strip() for c in text.split("\n\n") if c.strip()]
-        existing = load_chunks()
-        start_id = max([c.get("id", -1) for c in existing], default=-1) + 1
-        new_chunks = [{"id": start_id + i, "text": c, "source": source_path} for i, c in enumerate(raw_chunks)]
-        all_chunks = existing + new_chunks
-        save_chunks(all_chunks)
-        self.chunks = all_chunks
+    def ingest_text(self, text: str, source_name: str = "uploaded_text", doc_id: str = None, doc_version: str = "v1"):
+        new_chunks = ingest_plain_text(text, source_name=source_name, doc_id=doc_id, doc_version=doc_version)
+        self.chunks = load_chunks()
         return len(new_chunks)
 
-    def ingest_pdf(self, pdf_path: Path) -> int:
-        pdf_text = extract_text_from_pdf(pdf_path)
-        return self.ingest_text(pdf_text, source_name=pdf_path.name)
-
-    def ingest_text(self, text: str, source_name: str = "uploaded_text") -> int:
-        raw_chunks = chunk_text(text)
-        existing = load_chunks()
-        start_id = max([c.get("id", -1) for c in existing], default=-1) + 1
-        new_chunks = [{"id": start_id + i, "text": c, "source": source_name} for i, c in enumerate(raw_chunks)]
-        all_chunks = existing + new_chunks
-        save_chunks(all_chunks)
-        self.chunks = all_chunks
+    def ingest_pdf(self, pdf_path: Path):
+        new_chunks = ingest_pdf_file(pdf_path)
+        self.chunks = load_chunks()
         return len(new_chunks)
 
     def answer_once(self, question: str):
@@ -244,7 +287,19 @@ class SimpleRAG:
         final_answer = answer if faithful else "I don't know based on the provided documents."
 
         sources = [
-            {"chunk_id": ch["id"], "text": ch["text"], "score": float(score), "metadata": {"source": ch.get("source", "")}}
+            {
+                "chunk_id": ch["id"],
+                "text": ch["text"],
+                "score": float(score),
+                "metadata": {
+                    "source_name": ch.get("source_name"),
+                    "page_number": ch.get("page_number"),
+                    "chunk_index": ch.get("chunk_index"),
+                    "doc_id": ch.get("doc_id"),
+                    "doc_version": ch.get("doc_version"),
+                    "ingested_at": ch.get("ingested_at"),
+                }
+            }
             for score, ch in reranked
         ]
 
