@@ -4,6 +4,7 @@ import time
 import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
+from collections import defaultdict
 
 from PyPDF2 import PdfReader
 
@@ -20,20 +21,12 @@ def tokenize(text: str):
     return re.findall(r"\w+", text.lower())
 
 
-def rewrite_query(question: str) -> str:
-    return question.strip()
-
-
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
 def file_hash_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
-
-def file_hash_path(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def load_chunks():
@@ -60,17 +53,13 @@ def extract_text_from_pdf(pdf_path: Path):
     for page_num, page in enumerate(reader.pages, start=1):
         text = (page.extract_text() or "").strip()
         if text:
-            pages.append({
-                "page_number": page_num,
-                "text": text,
-            })
+            pages.append({"page_number": page_num, "text": text})
     return pages
 
 
 def ingest_plain_text(text: str, source_name: str = "uploaded_text", doc_id: str = None, doc_version: str = "v1"):
     existing = load_chunks()
-    existing_ids = [c.get("id", -1) for c in existing]
-    start_id = max(existing_ids, default=-1) + 1
+    start_id = max([c.get("id", -1) for c in existing], default=-1) + 1
 
     new_chunks = []
     for idx, part in enumerate(chunk_text(text), start=1):
@@ -85,20 +74,15 @@ def ingest_plain_text(text: str, source_name: str = "uploaded_text", doc_id: str
             "ingested_at": now_iso(),
         })
 
-    all_chunks = existing + new_chunks
-    save_chunks(all_chunks)
+    save_chunks(existing + new_chunks)
     return new_chunks
 
 
 def ingest_pdf_file(pdf_path: Path):
     pdf_bytes = pdf_path.read_bytes()
     doc_id = file_hash_bytes(pdf_bytes)
-    doc_version = "v1"
-    source_name = pdf_path.name
-
     existing = load_chunks()
-    existing_doc_ids = {c.get("doc_id") for c in existing if c.get("doc_id")}
-    if doc_id in existing_doc_ids:
+    if any(c.get("doc_id") == doc_id for c in existing):
         return []
 
     start_id = max([c.get("id", -1) for c in existing], default=-1) + 1
@@ -106,52 +90,58 @@ def ingest_pdf_file(pdf_path: Path):
 
     new_chunks = []
     next_id = start_id
-
     for page in pages:
-        page_number = page["page_number"]
-        page_text = page["text"]
-        for chunk_index, part in enumerate(chunk_text(page_text), start=1):
+        for chunk_index, part in enumerate(chunk_text(page["text"]), start=1):
             new_chunks.append({
                 "id": next_id,
                 "text": part,
-                "source_name": source_name,
-                "page_number": page_number,
+                "source_name": pdf_path.name,
+                "page_number": page["page_number"],
                 "chunk_index": chunk_index,
                 "doc_id": doc_id,
-                "doc_version": doc_version,
+                "doc_version": "v1",
                 "ingested_at": now_iso(),
             })
             next_id += 1
 
-    all_chunks = existing + new_chunks
-    save_chunks(all_chunks)
+    save_chunks(existing + new_chunks)
     return new_chunks
 
 
-def keyword_retrieve(chunks, query_tokens, top_k=8):
+def dense_retrieve(chunks, query_tokens, top_k=8):
     scored = []
-    query_set = set(query_tokens)
-    query_phrase = " ".join(query_tokens)
+    qset = set(query_tokens)
+    for ch in chunks:
+        dset = set(tokenize(ch["text"]))
+        overlap = len(qset & dset)
+        score = overlap / max(len(qset), 1)
+        scored.append((score, ch))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return scored[:top_k]
+
+
+def sparse_retrieve(chunks, query_tokens, top_k=8):
+    scored = []
+    qset = set(query_tokens)
+    qphrase = " ".join(query_tokens)
 
     for ch in chunks:
-        doc_tokens = set(tokenize(ch["text"]))
-        overlap = len(query_set & doc_tokens)
+        dset = set(tokenize(ch["text"]))
+        overlap = len(qset & dset)
         boost = 0
         text = ch["text"].lower()
 
-        if "great red spot" in query_phrase and "great red spot" in text:
+        if "great red spot" in qphrase and "great red spot" in text:
             boost += 4
-        if "moons" in query_set and "moon" in doc_tokens:
-            boost += 1
-        if "strongest winds" in query_phrase and "strongest winds" in text:
+        if "closest to the sun" in qphrase and "closest to the sun" in text:
             boost += 4
-        if "rotates on its side" in query_phrase and "rotates on its side" in text:
+        if "strongest winds" in qphrase and "strongest winds" in text:
             boost += 4
-        if "closest to the sun" in query_phrase and "closest to the sun" in text:
+        if "rotates on its side" in qphrase and "rotates on its side" in text:
             boost += 4
-        if "liquid water" in query_phrase and "liquid water" in text:
+        if "runaway greenhouse" in qphrase and "runaway greenhouse" in text:
             boost += 4
-        if "runaway greenhouse" in query_phrase and "runaway greenhouse" in text:
+        if "liquid water" in qphrase and "liquid water" in text:
             boost += 4
 
         scored.append((overlap + boost, ch))
@@ -160,56 +150,43 @@ def keyword_retrieve(chunks, query_tokens, top_k=8):
     return scored[:top_k]
 
 
-def vector_retrieve(chunks, query_tokens, top_k=8):
-    scored = []
-    query_set = set(query_tokens)
-    for ch in chunks:
-        doc_tokens = set(tokenize(ch["text"]))
-        overlap = len(query_set & doc_tokens)
-        score = overlap / max(len(query_set), 1)
-        scored.append((score, ch))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return scored[:top_k]
+def reciprocal_rank_fusion(result_lists, top_k=8, k=60):
+    scores = defaultdict(float)
+    doc_map = {}
 
+    for results in result_lists:
+        for rank, item in enumerate(results, start=1):
+            score, ch = item
+            doc_id = ch["id"]
+            scores[doc_id] += 1.0 / (k + rank)
+            doc_map[doc_id] = ch
 
-def merge_results(vector_hits, keyword_hits, top_k=8):
-    merged = {}
-    for score, ch in vector_hits:
-        merged[ch["id"]] = {"chunk": ch, "v": score, "k": 0.0}
-    for score, ch in keyword_hits:
-        if ch["id"] not in merged:
-            merged[ch["id"]] = {"chunk": ch, "v": 0.0, "k": score}
-        else:
-            merged[ch["id"]]["k"] = max(merged[ch["id"]]["k"], score)
-
-    combined = []
-    for item in merged.values():
-        final_score = 0.5 * item["v"] + 0.5 * item["k"]
-        combined.append((final_score, item["chunk"]))
-
-    combined.sort(key=lambda x: x[0], reverse=True)
-    return combined[:top_k]
+    ranked_ids = sorted(scores.keys(), key=lambda doc_id: scores[doc_id], reverse=True)
+    fused = []
+    for doc_id in ranked_ids[:top_k]:
+        fused.append((scores[doc_id], doc_map[doc_id]))
+    return fused
 
 
 def rerank(question: str, retrieved):
-    q_text = " ".join(tokenize(question))
+    qtext = " ".join(tokenize(question))
     ranked = []
 
     for score, ch in retrieved:
         text = ch["text"].lower()
         bonus = 0
 
-        if "great red spot" in q_text and "great red spot" in text:
+        if "great red spot" in qtext and "great red spot" in text:
             bonus += 5
-        if "closest to the sun" in q_text and "closest to the sun" in text:
+        if "closest to the sun" in qtext and "closest to the sun" in text:
             bonus += 5
-        if "strongest winds" in q_text and "strongest winds" in text:
+        if "strongest winds" in qtext and "strongest winds" in text:
             bonus += 5
-        if "rotates on its side" in q_text and "rotates on its side" in text:
+        if "rotates on its side" in qtext and "rotates on its side" in text:
             bonus += 5
-        if "runaway greenhouse" in q_text and "runaway greenhouse" in text:
+        if "runaway greenhouse" in qtext and "runaway greenhouse" in text:
             bonus += 5
-        if "liquid water" in q_text and "liquid water" in text:
+        if "liquid water" in qtext and "liquid water" in text:
             bonus += 5
 
         ranked.append((score + bonus, ch))
@@ -242,6 +219,25 @@ def verify_faithfulness(question: str, answer: str, retrieved):
     return covered >= 2 and answer_supported
 
 
+def format_hits(hits):
+    out = []
+    for score, ch in hits:
+        out.append({
+            "chunk_id": ch["id"],
+            "text": ch["text"],
+            "score": float(score),
+            "metadata": {
+                "source_name": ch.get("source_name"),
+                "page_number": ch.get("page_number"),
+                "chunk_index": ch.get("chunk_index"),
+                "doc_id": ch.get("doc_id"),
+                "doc_version": ch.get("doc_version"),
+                "ingested_at": ch.get("ingested_at"),
+            }
+        })
+    return out
+
+
 class SimpleRAG:
     def __init__(self):
         self.chunks = load_chunks()
@@ -257,61 +253,51 @@ class SimpleRAG:
         return len(new_chunks)
 
     def answer_once(self, question: str):
-        rewritten = rewrite_query(question)
+        rewritten = question.strip()
         q_tokens = tokenize(rewritten)
 
-        v_hits = vector_retrieve(self.chunks, q_tokens, top_k=8)
-        k_hits = keyword_retrieve(self.chunks, q_tokens, top_k=8)
-        merged = merge_results(v_hits, k_hits, top_k=8)
-        reranked = rerank(rewritten, merged)
+        dense_hits = dense_retrieve(self.chunks, q_tokens, top_k=8)
+        sparse_hits = sparse_retrieve(self.chunks, q_tokens, top_k=8)
+        fused_hits = reciprocal_rank_fusion([dense_hits, sparse_hits], top_k=8, k=60)
+        reranked_hits = rerank(rewritten, fused_hits)
 
-        if not reranked:
+        if not reranked_hits:
             return {
                 "question": question,
                 "rewritten_query": rewritten,
-                "retrieval_mode": "hybrid",
+                "retrieval_mode": "hybrid_rrf",
                 "answer": "I don't know based on the provided documents.",
                 "sources": [],
                 "faithful": True,
                 "context": "",
                 "latency_ms": 0,
+                "dense_hits": format_hits(dense_hits),
+                "sparse_hits": format_hits(sparse_hits),
+                "fused_hits": format_hits(fused_hits),
+                "reranked_hits": format_hits(reranked_hits),
             }
 
-        top_score, top_chunk = reranked[0]
-        if top_score < 1:
-            answer = "I don't know based on the provided documents."
-        else:
-            answer = f"Based on the retrieved context: {top_chunk['text']}"
+        top_score, top_chunk = reranked_hits[0]
+        answer = f"Based on the retrieved context: {top_chunk['text']}" if top_score >= 0.01 else "I don't know based on the provided documents."
 
-        faithful = verify_faithfulness(question, answer, reranked)
+        faithful = verify_faithfulness(question, answer, reranked_hits)
         final_answer = answer if faithful else "I don't know based on the provided documents."
 
-        sources = [
-            {
-                "chunk_id": ch["id"],
-                "text": ch["text"],
-                "score": float(score),
-                "metadata": {
-                    "source_name": ch.get("source_name"),
-                    "page_number": ch.get("page_number"),
-                    "chunk_index": ch.get("chunk_index"),
-                    "doc_id": ch.get("doc_id"),
-                    "doc_version": ch.get("doc_version"),
-                    "ingested_at": ch.get("ingested_at"),
-                }
-            }
-            for score, ch in reranked
-        ]
+        sources = format_hits(reranked_hits)
 
         return {
             "question": question,
             "rewritten_query": rewritten,
-            "retrieval_mode": "hybrid",
+            "retrieval_mode": "hybrid_rrf",
             "answer": final_answer,
             "sources": sources,
             "faithful": faithful,
-            "context": compress_context(reranked),
+            "context": compress_context(reranked_hits),
             "latency_ms": 0,
+            "dense_hits": format_hits(dense_hits),
+            "sparse_hits": format_hits(sparse_hits),
+            "fused_hits": format_hits(fused_hits),
+            "reranked_hits": format_hits(reranked_hits),
         }
 
 

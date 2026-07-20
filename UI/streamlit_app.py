@@ -8,14 +8,12 @@ API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 SAMPLE_QUESTIONS = [
     "What is the Great Red Spot?",
     "Which planet rotates on its side and why is that unusual?",
-    "Compare Venus and Mercury in terms of temperature and atmosphere.",
-    "Why is Neptune scientifically interesting beyond being the farthest planet?",
-    "What is the asteroid belt and why did it not form a planet?",
-    "How does the Sun produce energy?",
-    "Which planet has the strongest winds and what does that imply?",
     "Why is Venus hotter than Mercury even though it is farther from the Sun?",
-    "What makes Saturn’s ring system notable?",
     "What evidence suggests Mars may once have had liquid water?",
+    "Which planet has the strongest winds and what does that imply?",
+    "What is the asteroid belt and why did it not form a planet?",
+    "What makes Saturn’s ring system notable?",
+    "How does the Sun produce energy?",
 ]
 
 def init_questions():
@@ -30,14 +28,76 @@ def reshuffle_questions():
 def use_question(q):
     st.session_state.pending_question = q
 
-st.set_page_config(page_title="RAG Learning Lab", page_icon="🧠", layout="wide")
+st.set_page_config(
+    page_title="RAG Learning Lab",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+st.markdown(
+    """
+    <style>
+    .hero {
+        padding: 1rem 1.2rem;
+        border-radius: 18px;
+        background: linear-gradient(90deg, #0f766e 0%, #2563eb 50%, #7c3aed 100%);
+        color: white;
+        margin-bottom: 1rem;
+    }
+    .metric-card {
+        padding: 1rem;
+        border-radius: 16px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+    }
+    .good {
+        color: #166534;
+        background: #dcfce7;
+        padding: 0.25rem 0.55rem;
+        border-radius: 999px;
+        font-weight: 600;
+    }
+    .warn {
+        color: #92400e;
+        background: #fef3c7;
+        padding: 0.25rem 0.55rem;
+        border-radius: 999px;
+        font-weight: 600;
+    }
+    .bad {
+        color: #991b1b;
+        background: #fee2e2;
+        padding: 0.25rem 0.55rem;
+        border-radius: 999px;
+        font-weight: 600;
+    }
+    .section-title {
+        margin-top: 0.5rem;
+        margin-bottom: 0.25rem;
+        color: #0f172a;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 init_questions()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-st.title("🧠 RAG Learning Lab")
-st.caption("A demo for query rewriting, hybrid retrieval, reranking, faithfulness verification, and PDF uploads.")
+st.markdown(
+    """
+    <div class="hero">
+        <h1 style="margin:0;">🧠 RAG Learning Lab</h1>
+        <p style="margin:0.35rem 0 0 0; font-size:1rem;">
+            Hybrid retrieval, RRF fusion, reranking, faithfulness checks, and PDF upload support.
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 with st.sidebar:
     st.header("Controls")
@@ -58,6 +118,7 @@ with st.sidebar:
     uploaded_pdf = st.file_uploader("Upload a PDF document", type=["pdf"])
 
     if uploaded_pdf is not None:
+        st.caption(f"Selected file: {uploaded_pdf.name}")
         if st.button("Ingest PDF"):
             try:
                 files = {"file": (uploaded_pdf.name, uploaded_pdf.getvalue(), "application/pdf")}
@@ -77,28 +138,17 @@ with st.sidebar:
             use_question(q)
 
     st.divider()
-    st.subheader("What this demo shows")
+    st.subheader("Pipeline")
     st.markdown(
         "- Query rewriting\n"
-        "- Hybrid retrieval\n"
+        "- Dense retrieval\n"
+        "- Sparse retrieval\n"
+        "- RRF fusion\n"
         "- Re-ranking\n"
-        "- Faithfulness verification\n"
-        "- Abstention when evidence is weak\n"
-        "- PDF ingestion"
+        "- Faithfulness check"
     )
 
-top_left, top_mid, top_right = st.columns([1, 1, 1], gap="medium")
-
-with top_left:
-    st.metric("Pipeline", "Hybrid RAG")
-
-with top_mid:
-    st.metric("Answer style", "Grounded")
-
-with top_right:
-    st.metric("Extra mode", "PDF Upload")
-
-main_col, info_col = st.columns([2.2, 1], gap="large")
+main_col, info_col = st.columns([2.1, 1], gap="large")
 
 with main_col:
     st.subheader("Chat")
@@ -107,7 +157,7 @@ with main_col:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
 
-    question = st.chat_input("Ask a question about the solar system or uploaded PDFs")
+    question = st.chat_input("Ask about the solar system or uploaded PDFs")
 
     if "pending_question" in st.session_state:
         question = st.session_state.pending_question
@@ -128,29 +178,57 @@ with main_col:
                 res.raise_for_status()
                 data = res.json()
 
-                st.write(data.get("answer", ""))
-
                 faithful = data.get("faithful", False)
-                st.write("Faithfulness:", "✅" if faithful else "❌")
+                retrieval_mode = data.get("retrieval_mode", "unknown")
+                answer = data.get("answer", "")
 
-                with st.expander("Debug details", expanded=False):
+                st.markdown(answer)
+
+                badge = "✅ Faithful" if faithful else "⚠️ Weak evidence"
+                badge_class = "good" if faithful else "warn"
+                st.markdown(f"<span class='{badge_class}'>{badge}</span>", unsafe_allow_html=True)
+                st.caption(f"Retrieval mode: {retrieval_mode} | Latency: {data.get('latency_ms', 'N/A')} ms")
+
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Dense hits", len(data.get("dense_hits", [])))
+                c2.metric("Sparse hits", len(data.get("sparse_hits", [])))
+                c3.metric("Fused hits", len(data.get("fused_hits", [])))
+                c4.metric("Reranked hits", len(data.get("reranked_hits", [])))
+
+                tabs = st.tabs(["Dense", "Sparse", "Fused", "Reranked"])
+
+                def render_hits(hits):
+                    if not hits:
+                        st.info("No hits returned.")
+                        return
+                    for h in hits:
+                        md = h.get("metadata", {})
+                        page = md.get("page_number")
+                        src = md.get("source_name")
+                        st.markdown(
+                            f"**Chunk {h['chunk_id']}**  \n"
+                            f"Score: `{h['score']:.4f}`  \n"
+                            f"Source: `{src}` | Page: `{page}`"
+                        )
+                        st.write(h["text"])
+                        st.divider()
+
+                with tabs[0]:
+                    render_hits(data.get("dense_hits", []))
+                with tabs[1]:
+                    render_hits(data.get("sparse_hits", []))
+                with tabs[2]:
+                    render_hits(data.get("fused_hits", []))
+                with tabs[3]:
+                    render_hits(data.get("reranked_hits", []))
+
+                with st.expander("Final response details", expanded=False):
                     st.write("Rewritten query:", data.get("rewritten_query", "N/A"))
-                    st.write("Retrieval mode:", data.get("retrieval_mode", "N/A"))
-                    st.write("Latency ms:", data.get("latency_ms", "N/A"))
-                    st.write("Faithful:", data.get("faithful", "N/A"))
+                    st.write("Faithful:", faithful)
                     st.write("Context:")
                     st.code(data.get("context", ""), language="text")
 
-                with st.expander("Retrieved sources", expanded=False):
-                    for s in data.get("sources", []):
-                        st.markdown(f"**Chunk {s['chunk_id']}** — score: {s['score']:.3f}")
-                        st.write(s["text"])
-                        if s.get("metadata"):
-                            st.caption(str(s["metadata"]))
-
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": data.get("answer", "")}
-                )
+                st.session_state.messages.append({"role": "assistant", "content": answer})
 
             except requests.exceptions.ConnectionError:
                 st.error(f"Could not connect to FastAPI at {API_URL}. Start the backend first.")
@@ -158,34 +236,35 @@ with main_col:
                 st.error(f"Request failed: {e}")
 
 with info_col:
-    st.subheader("How to use")
-    st.info(
-        "Upload a PDF in the sidebar, ingest it, then ask questions about it. "
-        "Supported questions should answer from context; weak evidence should abstain."
+    st.markdown("### Project status")
+    st.markdown(
+        """
+        <div class="metric-card">
+            <p><b>Current focus:</b> hybrid retrieval transparency</p>
+            <p><b>Next steps:</b> citations, evaluation set, deduplication</p>
+            <p><b>UI goal:</b> show each retrieval stage clearly</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    with st.expander("Good demo flow", expanded=True):
-        st.markdown(
-            "1. Ask a supported question from the built-in corpus.\n"
-            "2. Upload a PDF and ingest it.\n"
-            "3. Ask a question from the PDF.\n"
-            "4. Try an unsupported question and observe abstention."
-        )
+    st.markdown("### Good demo flow")
+    st.markdown(
+        "1. Ask a supported question.\n"
+        "2. Inspect dense vs sparse retrieval.\n"
+        "3. Compare RRF fusion and reranking.\n"
+        "4. Upload a PDF and ask a document-specific question."
+    )
 
-    with st.expander("Recommended demo questions", expanded=True):
+    with st.expander("Sample prompts", expanded=True):
         st.markdown(
             "- What is the Great Red Spot?\n"
-            "- Which planet rotates on its side and why is that unusual?\n"
-            "- Why is Venus hotter than Mercury even though it is farther from the Sun?\n"
-            "- What evidence suggests Mars may once have had liquid water?\n"
-            "- What is the asteroid belt and why did it not form a planet?"
+            "- Which planet rotates on its side?\n"
+            "- Why is Venus hotter than Mercury?\n"
+            "- What evidence suggests Mars had liquid water?"
         )
 
-    with st.expander("System goals", expanded=False):
+    with st.expander("Theme tip", expanded=False):
         st.markdown(
-            "- Query rewriting.\n"
-            "- Hybrid retrieval.\n"
-            "- Re-ranking.\n"
-            "- Faithfulness verification.\n"
-            "- Retrieve again when evidence is weak."
+            "For a stronger visual identity, set colors in `.streamlit/config.toml`."
         )

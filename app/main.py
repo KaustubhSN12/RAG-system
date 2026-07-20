@@ -1,5 +1,6 @@
 from pathlib import Path
 import tempfile
+from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
@@ -23,20 +24,50 @@ class IngestResponse(BaseModel):
     indexed_chunks: int
 
 
-@app.post("/query")
+class SourceMetadata(BaseModel):
+    source_name: Optional[str] = None
+    page_number: Optional[int] = None
+    chunk_index: Optional[int] = None
+    doc_id: Optional[str] = None
+    doc_version: Optional[str] = None
+    ingested_at: Optional[str] = None
+
+
+class Hit(BaseModel):
+    chunk_id: int
+    text: str
+    score: float
+    metadata: SourceMetadata = SourceMetadata()
+
+
+class QueryResponse(BaseModel):
+    question: str
+    rewritten_query: str
+    retrieval_mode: str
+    answer: str
+    faithful: bool
+    context: str
+    latency_ms: int
+    dense_hits: List[Hit] = []
+    sparse_hits: List[Hit] = []
+    fused_hits: List[Hit] = []
+    reranked_hits: List[Hit] = []
+
+
+@app.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Empty question")
     return answer_question(req.question)
 
 
-@app.post("/ingest")
+@app.post("/ingest", response_model=IngestResponse)
 def ingest_text(req: IngestTextRequest):
     count = rag.ingest_text(req.text, source_name=req.source_name)
     return IngestResponse(status="ok", indexed_chunks=count)
 
 
-@app.post("/ingest/pdf")
+@app.post("/ingest/pdf", response_model=IngestResponse)
 async def ingest_pdf(file: UploadFile = File(...)):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
@@ -48,8 +79,6 @@ async def ingest_pdf(file: UploadFile = File(...)):
 
     try:
         count = rag.ingest_pdf(tmp_path)
-        if count == 0:
-            return IngestResponse(status="ok", indexed_chunks=0)
         return IngestResponse(status="ok", indexed_chunks=count)
     finally:
         if tmp_path.exists():
