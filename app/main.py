@@ -40,11 +40,25 @@ class Hit(BaseModel):
     metadata: SourceMetadata = SourceMetadata()
 
 
+class SentenceCitation(BaseModel):
+    sentence: str
+    chunk_id: int
+    source_name: Optional[str] = None
+    page_number: Optional[int] = None
+    chunk_index: Optional[int] = None
+    doc_id: Optional[str] = None
+    doc_version: Optional[str] = None
+    ingested_at: Optional[str] = None
+    supporting_text: Optional[str] = None
+
+
 class QueryResponse(BaseModel):
     question: str
     rewritten_query: str
     retrieval_mode: str
     answer: str
+    answer_sentences: List[str] = []
+    sentence_citations: List[SentenceCitation] = []
     faithful: bool
     context: str
     latency_ms: int
@@ -52,6 +66,7 @@ class QueryResponse(BaseModel):
     sparse_hits: List[Hit] = []
     fused_hits: List[Hit] = []
     reranked_hits: List[Hit] = []
+    sources: List[Hit] = []
 
 
 @app.post("/query", response_model=QueryResponse)

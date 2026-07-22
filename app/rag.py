@@ -156,7 +156,7 @@ def reciprocal_rank_fusion(result_lists, top_k=8, k=60):
 
     for results in result_lists:
         for rank, item in enumerate(results, start=1):
-            score, ch = item
+            _, ch = item
             doc_id = ch["id"]
             scores[doc_id] += 1.0 / (k + rank)
             doc_map[doc_id] = ch
@@ -193,6 +193,39 @@ def rerank(question: str, retrieved):
 
     ranked.sort(key=lambda x: x[0], reverse=True)
     return ranked[:5]
+
+
+def sentence_split(text: str):
+    parts = re.split(r'(?<=[.!?])\s+', text.strip())
+    return [p.strip() for p in parts if p.strip()]
+
+
+def best_citation_for_sentence(sentence: str, hits):
+    sent_tokens = set(tokenize(sentence))
+    best = None
+    best_score = -1
+
+    for score, ch in hits:
+        doc_tokens = set(tokenize(ch["text"]))
+        overlap = len(sent_tokens & doc_tokens)
+        if overlap > best_score:
+            best_score = overlap
+            best = ch
+
+    if best is None:
+        return None
+
+    return {
+        "sentence": sentence,
+        "chunk_id": best["id"],
+        "source_name": best.get("source_name"),
+        "page_number": best.get("page_number"),
+        "chunk_index": best.get("chunk_index"),
+        "doc_id": best.get("doc_id"),
+        "doc_version": best.get("doc_version"),
+        "ingested_at": best.get("ingested_at"),
+        "supporting_text": best.get("text"),
+    }
 
 
 def compress_context(retrieved):
@@ -267,6 +300,8 @@ class SimpleRAG:
                 "rewritten_query": rewritten,
                 "retrieval_mode": "hybrid_rrf",
                 "answer": "I don't know based on the provided documents.",
+                "answer_sentences": [],
+                "sentence_citations": [],
                 "sources": [],
                 "faithful": True,
                 "context": "",
@@ -279,9 +314,12 @@ class SimpleRAG:
 
         top_score, top_chunk = reranked_hits[0]
         answer = f"Based on the retrieved context: {top_chunk['text']}" if top_score >= 0.01 else "I don't know based on the provided documents."
-
         faithful = verify_faithfulness(question, answer, reranked_hits)
         final_answer = answer if faithful else "I don't know based on the provided documents."
+
+        sentences = sentence_split(final_answer) if final_answer and "i don't know" not in final_answer.lower() else []
+        sentence_citations = [best_citation_for_sentence(s, reranked_hits) for s in sentences]
+        sentence_citations = [c for c in sentence_citations if c is not None]
 
         sources = format_hits(reranked_hits)
 
@@ -290,6 +328,8 @@ class SimpleRAG:
             "rewritten_query": rewritten,
             "retrieval_mode": "hybrid_rrf",
             "answer": final_answer,
+            "answer_sentences": sentences,
+            "sentence_citations": sentence_citations,
             "sources": sources,
             "faithful": faithful,
             "context": compress_context(reranked_hits),

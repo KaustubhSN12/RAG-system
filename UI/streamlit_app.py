@@ -65,17 +65,22 @@ st.markdown(
         border-radius: 999px;
         font-weight: 600;
     }
-    .bad {
-        color: #991b1b;
-        background: #fee2e2;
-        padding: 0.25rem 0.55rem;
+    .cite {
+        color: #1d4ed8;
+        background: #dbeafe;
+        padding: 0.2rem 0.5rem;
         border-radius: 999px;
+        font-size: 0.85rem;
         font-weight: 600;
+        display: inline-block;
+        margin-top: 0.25rem;
     }
-    .section-title {
-        margin-top: 0.5rem;
-        margin-bottom: 0.25rem;
-        color: #0f172a;
+    .sentence-box {
+        padding: 0.85rem 1rem;
+        border-radius: 14px;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        margin-bottom: 0.8rem;
     }
     </style>
     """,
@@ -92,7 +97,7 @@ st.markdown(
     <div class="hero">
         <h1 style="margin:0;">🧠 RAG Learning Lab</h1>
         <p style="margin:0.35rem 0 0 0; font-size:1rem;">
-            Hybrid retrieval, RRF fusion, reranking, faithfulness checks, and PDF upload support.
+            Hybrid retrieval, RRF fusion, reranking, sentence citations, and PDF upload support.
         </p>
     </div>
     """,
@@ -145,7 +150,7 @@ with st.sidebar:
         "- Sparse retrieval\n"
         "- RRF fusion\n"
         "- Re-ranking\n"
-        "- Faithfulness check"
+        "- Sentence citations"
     )
 
 main_col, info_col = st.columns([2.1, 1], gap="large")
@@ -179,15 +184,14 @@ with main_col:
                 data = res.json()
 
                 faithful = data.get("faithful", False)
-                retrieval_mode = data.get("retrieval_mode", "unknown")
                 answer = data.get("answer", "")
 
                 st.markdown(answer)
-
-                badge = "✅ Faithful" if faithful else "⚠️ Weak evidence"
-                badge_class = "good" if faithful else "warn"
-                st.markdown(f"<span class='{badge_class}'>{badge}</span>", unsafe_allow_html=True)
-                st.caption(f"Retrieval mode: {retrieval_mode} | Latency: {data.get('latency_ms', 'N/A')} ms")
+                st.markdown(
+                    f"<span class='{'good' if faithful else 'warn'}'>{'✅ Faithful' if faithful else '⚠️ Weak evidence'}</span>",
+                    unsafe_allow_html=True,
+                )
+                st.caption(f"Retrieval mode: {data.get('retrieval_mode', 'unknown')} | Latency: {data.get('latency_ms', 'N/A')} ms")
 
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Dense hits", len(data.get("dense_hits", [])))
@@ -222,6 +226,34 @@ with main_col:
                 with tabs[3]:
                     render_hits(data.get("reranked_hits", []))
 
+                st.markdown("### Sentence citations")
+
+                answer_sentences = data.get("answer_sentences", [])
+                sentence_citations = data.get("sentence_citations", [])
+
+                if not answer_sentences:
+                    st.info("No sentence-level citations were generated for this answer.")
+                else:
+                    for idx, sentence in enumerate(answer_sentences):
+                        citation = sentence_citations[idx] if idx < len(sentence_citations) else {}
+                        source_name = citation.get("source_name", "unknown")
+                        page_number = citation.get("page_number", "N/A")
+                        chunk_id = citation.get("chunk_id", "N/A")
+                        supporting_text = citation.get("supporting_text", "")
+
+                        st.markdown(
+                            f"""
+                            <div class="sentence-box">
+                                <div><b>Sentence {idx + 1}:</b> {sentence}</div>
+                                <div class="cite">Source: {source_name} | Page: {page_number} | Chunk: {chunk_id}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+                        with st.expander(f"Supporting chunk for sentence {idx + 1}", expanded=False):
+                            st.write(supporting_text)
+
                 with st.expander("Final response details", expanded=False):
                     st.write("Rewritten query:", data.get("rewritten_query", "N/A"))
                     st.write("Faithful:", faithful)
@@ -240,9 +272,9 @@ with info_col:
     st.markdown(
         """
         <div class="metric-card">
-            <p><b>Current focus:</b> hybrid retrieval transparency</p>
-            <p><b>Next steps:</b> citations, evaluation set, deduplication</p>
-            <p><b>UI goal:</b> show each retrieval stage clearly</p>
+            <p><b>Current focus:</b> grounded answers with citations</p>
+            <p><b>Next steps:</b> evaluation set, deduplication, better fusion tuning</p>
+            <p><b>UI goal:</b> make evidence traceable sentence by sentence</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -252,8 +284,9 @@ with info_col:
     st.markdown(
         "1. Ask a supported question.\n"
         "2. Inspect dense vs sparse retrieval.\n"
-        "3. Compare RRF fusion and reranking.\n"
-        "4. Upload a PDF and ask a document-specific question."
+        "3. Compare fused and reranked hits.\n"
+        "4. Review sentence-level citations.\n"
+        "5. Upload a PDF and ask a document-specific question."
     )
 
     with st.expander("Sample prompts", expanded=True):
